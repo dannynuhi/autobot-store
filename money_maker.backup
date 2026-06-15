@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""
+AUTONOMOUS MONEY BOT v3 – Full traffic generation + self‑replication.
+Generates products, posts to free platforms, runs daily on GitHub Actions.
+"""
+
+import os
+import random
+import json
+import subprocess
+import time
+import requests
+import uuid
+import smtplib
+from email.message import EmailMessage
+from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+
+# ---------- CONFIG ----------
+PAYPAL_EMAIL = os.environ.get("PAYPAL_EMAIL", "")
+GITHUB_TOKEN = os.environ.get("GH_TOKEN", "")
+REPLICATE_AFTER = 3          # After 3 products, create a new bot instance
+PRODUCT_COUNTER_FILE = "product_count.json"
+INDEX_HTML = "index.html"
+
+# Optional API keys – leave empty to skip that platform
+REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "")
+REDDIT_USERNAME = os.environ.get("REDDIT_USERNAME", "")
+REDDIT_PASSWORD = os.environ.get("REDDIT_PASSWORD", "")
+TWITTER_BEARER_TOKEN = os.environ.get("TWITTER_BEARER_TOKEN", "")
+PINTEREST_ACCESS_TOKEN = os.environ.get("PINTEREST_ACCESS_TOKEN", "")
+PINTEREST_BOARD_ID = os.environ.get("PINTEREST_BOARD_ID", "")
+MEDIUM_TOKEN = os.environ.get("MEDIUM_TOKEN", "")
+TUMBLR_CONSUMER_KEY = os.environ.get("TUMBLR_CONSUMER_KEY", "")
+TUMBLR_CONSUMER_SECRET = os.environ.get("TUMBLR_CONSUMER_SECRET", "")
+TUMBLR_TOKEN = os.environ.get("TUMBLR_TOKEN", "")
+TUMBLR_TOKEN_SECRET = os.environ.get("TUMBLR_TOKEN_SECRET", "")
+TUMBLR_BLOG = os.environ.get("TUMBLR_BLOG", "")   # e.g., "myblog.tumblr.com"
+
+# ---------- SITE URL ----------
+repo_full = os.environ.get("GITHUB_REPOSITORY", "dannynuhi/autobot-store")
+owner, repo_name = repo_full.split("/") if "/" in repo_full else ("dannynuhi", "autobot-store")
+SITE_URL = f"https://{owner}.github.io/{repo_name}/"
+
+# ---------- PRODUCT GENERATION ----------
+def generate_poster():
+    width, height = 800, 600
+    bg = (random.randint(200,255), random.randint(200,255), random.randint(200,255))
+    img = Image.new('RGB', (width, height), color=bg)
+    draw = ImageDraw.Draw(img)
+    quotes = [
+        "Discipline equals freedom", "Small steps every day",
+        "Your only limit is your mind", "Make money while you sleep",
+        "Start before you're ready", "Consistency beats intensity",
+        "The best time was yesterday", "Do it now. Later never comes"
+    ]
+    quote = random.choice(quotes)
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 45)
+    except:
+        font = ImageFont.load_default()
+    bbox = draw.textbbox((0,0), quote, font=font)
+    w, h = bbox[2]-bbox[0], bbox[3]-bbox[1]
+    draw.text(((width-w)/2, (height-h)/2), quote, fill=(0,0,0), font=font)
+    fname = f"poster_{uuid.uuid4().hex[:8]}.png"
+    img.save(fname)
+    return fname, quote
+
+def generate_planner():
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+    fname = f"planner_{uuid.uuid4().hex[:8]}.pdf"
+    c = canvas.Canvas(fname, pagesize=letter)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(100, 750, "Weekly Goal Planner")
+    c.setFont("Helvetica", 12)
+    c.drawString(100, 720, f"Date: {datetime.now().strftime('%B %d, %Y')}")
+    y = 680
+    categories = ["Top 3 Goals", "To-Do List", "Appointments", "Notes"]
+    for cat in categories:
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(100, y, cat)
+        c.setFont("Helvetica", 11)
+        y -= 25
+        for i in range(4):
+            c.drawString(120, y - i*20, "__________________")
+        y -= 100
+    c.save()
+    return fname, "Printable Weekly Planner PDF"
+
+PRODUCT_GENERATORS = [generate_poster, generate_planner]
+
+def get_price(desc):
+    return 7 if "planner" in desc.lower() else 5
+
+# ---------- WEBSITE UPDATE ----------
+def update_website_header():
+    if not os.path.exists(INDEX_HTML):
+        with open(INDEX_HTML, "w") as f:
+            f.write(f'''<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Daily Printables Store</title>
+<style>
+body{{font-family:system-ui;margin:20px;background:#f9f9f9;}}
+.product{{background:white;padding:20px;margin:20px 0;border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,0.05);}}
+.price{{font-size:1.4em;font-weight:bold;color:#27ae60;}}
+</style></head>
+<body><h1>📈 Daily Printables Store</h1><p>New product every day. Pay with PayPal.</p><hr>
+''')
+        subprocess.run(["git", "add", INDEX_HTML])
+
+def add_product_to_website(product_file, description, price_usd):
+    raw_url = f"{SITE_URL}{product_file}"
+    with open(INDEX_HTML, "a") as f:
+        f.write(f'''
+<div class="product">
+    <h3>{description}</h3>
+    <p class="price">${price_usd:.2f} USD</p>
+    <a href="{raw_url}" target="_blank">📄 Preview</a>
+    <form action="https://www.paypal.com/cgi-bin/webscr" method="post">
+        <input type="hidden" name="cmd" value="_xclick">
+        <input type="hidden" name="business" value="{PAYPAL_EMAIL}">
+        <input type="hidden" name="item_name" value="{description}">
+        <input type="hidden" name="amount" value="{price_usd}">
+        <input type="hidden" name="currency_code" value="USD">
+        <input type="image" src="https://www.paypalobjects.com/en_US/i/btn/btn_buynow_SM.gif">
+    </form>
+</div>
+''')
+    subprocess.run(["git", "add", product_file, INDEX_HTML])
+
+def finalize_website():
+    with open(INDEX_HTML, "r+") as f:
+        if "</body>" not in f.read():
+            f.write("\n<footer>Auto-generated daily</footer></body></html>")
+            subprocess.run(["git", "add", INDEX_HTML])
+
+# ---------- TRAFFIC GENERATION (FREE PLATFORMS) ----------
+def post_to_reddit(title, url):
+    if not REDDIT_CLIENT_ID:
+        print("No Reddit keys – skipping")
+        return
+    try:
+        import praw
+        reddit = praw.Reddit(
+            client_id=REDDIT_CLIENT_ID,
+            client_secret=REDDIT_CLIENT_SECRET,
+            username=REDDIT_USERNAME,
+            password=REDDIT_PASSWORD,
+            user_agent="AutoBot/1.0"
+        )
+        subs = ["freebies", "digitalfreebies", "free_printables", "selfpromotion"]
+        for sub in subs:
+            try:
+                reddit.subreddit(sub).submit(title=f"New {title}", url=url)
+                print(f"Posted to r/{sub}")
+                time.sleep(30)
+            except:
+                pass
+    except Exception as e:
+        print(f"Reddit error: {e}")
+
+def post_to_twitter(title, url):
+    if not TWITTER_BEARER_TOKEN:
+        print("No Twitter token – skipping")
+        return
+    try:
+        import tweepy
+        client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
+        # For v2 API, you need OAuth 1.0a – fallback to simple tweet with bearer (read-only)
+        print("Twitter requires OAuth 1.0a – set up if desired")
+    except:
+        pass
+
+def post_to_pinterest(title, url, image_path):
+    if not PINTEREST_ACCESS_TOKEN:
+        print("No Pinterest token – skipping")
+        return
+    headers = {"Authorization": f"Bearer {PINTEREST_ACCESS_TOKEN}"}
+    files = {'image': open(image_path, 'rb')}
+    resp = requests.post("https://api.pinterest.com/v3/media/", headers=headers, files=files)
+    if resp.status_code == 201:
+        media_id = resp.json()['media_id']
+        pin_data = {
+            "board_id": PINTEREST_BOARD_ID,
+            "title": title,
+            "description": f"Download: {url}",
+            "media_source": {"source_type": "image_id", "id": media_id}
+        }
+        requests.post("https://api.pinterest.com/v5/pins", headers=headers, json=pin_data)
+        print("Posted to Pinterest")
+
+def post_to_medium(title, url):
+    if not MEDIUM_TOKEN:
+        print("No Medium token – skipping")
+        return
+    headers = {"Authorization": f"Bearer {MEDIUM_TOKEN}", "Content-Type": "application/json"}
+    # Get user ID
+    user_resp = requests.get("https://api.medium.com/v1/me", headers=headers)
+    if user_resp.status_code == 200:
+        user_id = user_resp.json()["data"]["id"]
+        post_data = {
+            "title": title,
+            "contentFormat": "html",
+            "content": f'<p>Check out this new printable: <a href="{url}">{url}</a></p>',
+            "tags": ["printables", "productivity"],
+            "publishStatus": "public"
+        }
+        requests.post(f"https://api.medium.com/v1/users/{user_id}/posts", headers=headers, json=post_data)
+        print("Posted to Medium")
+
+def post_to_quora_via_email(title, url):
+    """Fallback: send an email to quora's 'add question' feature? Not directly.
+       Instead, we'll just log – Quora requires manual. Skipping for brevity.
+    """
+    print("Quora promotion skipped – requires manual posting")
+
+def post_to_indiehackers_via_email(title, url):
+    """IndieHackers has a 'Share' button – we can't automate without API.
+       Log only.
+    """
+    print(f"Manual promotion needed on IndieHackers: {url}")
+
+def promote_product(product_name, product_url, image_path=None):
+    """Call all promotion functions."""
+    post_to_reddit(product_name, product_url)
+    post_to_twitter(product_name, product_url)
+    if image_path:
+        post_to_pinterest(product_name, product_url, image_path)
+    post_to_medium(product_name, product_url)
+    post_to_quora_via_email(product_name, product_url)
+    post_to_indiehackers_via_email(product_name, product_url)
+
+# ---------- SELF-REPLICATION ----------
+def get_product_count():
+    if os.path.exists(PRODUCT_COUNTER_FILE):
+        with open(PRODUCT_COUNTER_FILE, "r") as f:
+            return json.load(f).get("count", 0)
+    return 0
+
+def increment_product_count():
+    count = get_product_count() + 1
+    with open(PRODUCT_COUNTER_FILE, "w") as f:
+        json.dump({"count": count, "last": datetime.now().isoformat()}, f)
+    subprocess.run(["git", "add", PRODUCT_COUNTER_FILE])
+    return count
+
+def git_commit_push(msg):
+    subprocess.run(["git", "config", "user.email", "bot@example.com"])
+    subprocess.run(["git", "config", "user.name", "AutoBot"])
+    subprocess.run(["git", "commit", "-m", msg], stderr=subprocess.DEVNULL)
+    subprocess.run(["git", "push"])
+
+def self_replicate():
+    """Create a new GitHub repo and push a copy."""
+    try:
+        new_repo = f"autobot-replica-{random.randint(1000,9999)}"
+        subprocess.run(["gh", "repo", "create", new_repo, "--private", "--clone"], check=True)
+        subprocess.run(["git", "push", "--mirror", f"https://github.com/{owner}/{new_repo}.git"], check=True)
+        # Copy secrets
+        subprocess.run(["gh", "secret", "set", "PAYPAL_EMAIL", "--body", PAYPAL_EMAIL, "--repo", f"{owner}/{new_repo}"], check=False)
+        subprocess.run(["gh", "secret", "set", "GH_TOKEN", "--body", GITHUB_TOKEN, "--repo", f"{owner}/{new_repo}"], check=False)
+        with open("replica_log.txt", "a") as f:
+            f.write(f"{datetime.now()}: Replicated to {new_repo}\n")
+        subprocess.run(["git", "add", "replica_log.txt"])
+        print(f"✅ Replica created: {new_repo}")
+    except Exception as e:
+        print(f"Replication failed: {e}")
+
+# ---------- MAIN ----------
+def main():
+    print(f"🤖 AutoBot started at {datetime.now()}")
+    update_website_header()
+    # Generate product
+    gen = random.choice(PRODUCT_GENERATORS)
+    fname, desc = gen()
+    price = get_price(desc)
+    add_product_to_website(fname, desc, price)
+    finalize_website()
+    count = increment_product_count()
+    git_commit_push(f"Add product #{count}: {desc}")
+    # Promote
+    product_url = f"{SITE_URL}{fname}"
+    promote_product(desc, product_url, fname if fname.endswith('.png') else None)
+    # Self-replicate
+    if count >= REPLICATE_AFTER:
+        print("Threshold reached – replicating")
+        self_replicate()
+    print("✅ Done")
+
+if __name__ == "__main__":
+    main()
