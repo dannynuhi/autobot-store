@@ -1,0 +1,25 @@
+name: Daily Product Factory
+
+on:
+  schedule:
+    - cron: '0 10 * * *'   # 10:00 UTC daily
+  workflow_dispatch:        # manual trigger
+
+jobs:
+  build:
+    runs-on: macos-latest   # macOS runner for M1 compatibility (also works)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run AutoBot
+        run: python3 money_maker.py
+        env:
+          PAYPAL_EMAIL: ${{ secrets.PAYPAL_EMAIL }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
