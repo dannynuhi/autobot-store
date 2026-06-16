@@ -16,20 +16,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: |
           python -m venv venv
           source venv/bin/activate
-          pip install --upgrade pip
-          pip install Pillow reportlab requests praw tweepy pytumblr
-      - name: Run AutoBot
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+        shell: bash
+
+      - name: Run AutoBot (with debug output)
         run: |
           source venv/bin/activate
-          python money_maker.py
+          python -u money_maker.py 2>&1 | tee output.log
+        shell: bash
         env:
           PAYPAL_EMAIL: ${{ secrets.PAYPAL_EMAIL }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -54,3 +59,6 @@ jobs:
           BING_API_KEY: ${{ secrets.BING_API_KEY }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           KOYEB_API_KEY: ${{ secrets.KOYEB_API_KEY }}
+
+      - name: Show output log (if any)
+        run: cat output.log || true
