@@ -742,3 +742,41 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# ---------- CORRECTED SAFE GENERATORS (return 3 values) ----------
+def safe_generate_poster():
+    width, height = 800, 600
+    bg = (245, 245, 245)
+    img = Image.new("RGB", (width, height), color=bg)
+    draw = ImageDraw.Draw(img)
+    quote = "Discipline equals freedom"
+    font = get_font(60)
+    bbox = draw.textbbox((0,0), quote, font=font)
+    tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
+    x = (width - tw) // 2
+    y = (height - th) // 2
+    draw.text((x, y), quote, fill=(0,0,0), font=font)
+    draw.rectangle([(10,10), (width-10, height-10)], outline=(200,200,200), width=2)
+    fname = f"poster_safe_{uuid.uuid4().hex[:8]}.png"
+    img.save(fname)
+    return fname, quote, 10   # Score 10 = perfect quality
+
+def safe_generate_planner():
+    fname = f"planner_safe_{uuid.uuid4().hex[:8]}.pdf"
+    c = canvas.Canvas(fname, pagesize=letter)
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(100, 750, "Weekly Planner")
+    c.setFont("Helvetica", 14)
+    c.drawString(100, 720, "Date: ________________")
+    y = 680
+    for i in range(7):
+        c.drawString(100, y, f"Day {i+1}: ____________________")
+        y -= 40
+    c.save()
+    return fname, "Safe Weekly Planner", 10   # Perfect score
+
+def safe_generate():
+    if random.choice([True, False]):
+        return safe_generate_poster()
+    else:
+        return safe_generate_planner()
