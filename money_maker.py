@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-FINAL AUDITED AUTONOMOUS BOT – v8
-- 12 product types (EN/ES) with expanded quotes & sections
-- Generic webhook (optional – set GENERIC_WEBHOOK_URL)
-- Dynamic pricing per product type
-- Enhanced CSS (grid layout, better cards)
-- SEO: canonical, article:published_time
-- Twitter, pings, self‑replication with retries
+FINAL BOT WITH RETRIES – Fully audited
+- 12 product types (EN/ES) with expanded content
+- QC ≥8/10, fallback
+- Twitter with image upload
+- Generic webhook (optional) with 3 retries
+- SEO: JSON‑LD, Open Graph, canonical, grid CSS
+- Sitemap, RSS, ping aggregators
+- Self‑replication with 3 retries
+- git push with 3 retries
 """
 
 import os, random, json, subprocess, time, requests, uuid, sys, math
@@ -30,7 +32,7 @@ FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/apache/roboto/Ro
 FONT_FILE = "Roboto-Regular.ttf"
 GENERIC_WEBHOOK_URL = os.environ.get("GENERIC_WEBHOOK_URL", "")
 
-# Twitter keys (already set)
+# Twitter keys
 TWITTER_API_KEY = os.environ.get("TWITTER_API_KEY", "")
 TWITTER_API_SECRET = os.environ.get("TWITTER_API_SECRET", "")
 TWITTER_ACCESS_TOKEN = os.environ.get("TWITTER_ACCESS_TOKEN", "")
@@ -338,7 +340,7 @@ def generate_daily_planner_es():
     c.save()
     return fname, "Planificador Diario PDF"
 
-# ---------- PRODUCT GENERATORS LIST ----------
+# ---------- PRODUCT LIST ----------
 PRODUCT_GENERATORS = [
     generate_poster_en, generate_planner_en, generate_checklist_en,
     generate_habit_tracker_en, generate_goal_sheet_en, generate_daily_planner_en,
@@ -475,10 +477,8 @@ def safe_generate_planner():
 
 # ---------- DYNAMIC PRICING ----------
 def get_optimal_price(desc=None):
-    # Base price from A/B testing
     hist = load_price_history()
     if len(hist["sales"]) < 5:
-        # Default per type
         if desc:
             if "Planner" in desc or "Planificador" in desc:
                 return 7
@@ -489,7 +489,27 @@ def get_optimal_price(desc=None):
         return random.choice([3,5,7,9])
     return hist.get("best_price", 5)
 
-# ---------- WEBSITE WITH SEO (enhanced CSS) ----------
+def load_price_history():
+    if os.path.exists(PRICE_HISTORY):
+        with open(PRICE_HISTORY, "r") as f:
+            return json.load(f)
+    return {"sales": [], "best_price": 5}
+
+def save_price_history(hist):
+    with open(PRICE_HISTORY, "w") as f:
+        json.dump(hist, f)
+
+def record_sale(price):
+    hist = load_price_history()
+    hist["sales"].append({"price": price, "time": datetime.now().isoformat()})
+    hist["sales"] = hist["sales"][-100:]
+    from collections import Counter
+    prices = [s["price"] for s in hist["sales"]]
+    if prices:
+        hist["best_price"] = Counter(prices).most_common(1)[0][0]
+    save_price_history(hist)
+
+# ---------- WEBSITE ----------
 def update_website_header():
     if not os.path.exists(INDEX_HTML):
         with open(INDEX_HTML, "w") as f:
@@ -617,26 +637,20 @@ def post_to_twitter_with_image(description, url, image_path):
     except Exception as e:
         print(f"Twitter error: {e}")
 
-# ---------- GENERIC WEBHOOK (no API keys) ----------
+# ---------- GENERIC WEBHOOK (with retries) ----------
 def post_to_webhook(product_name, product_url, image_url, price):
     if not GENERIC_WEBHOOK_URL:
         return
-    try:
-        payload = {
-            "product": product_name,
-            "url": product_url,
-            "image": image_url,
-            "price": price,
-            "timestamp": datetime.now().isoformat()
-        }
-        requests.post(GENERIC_WEBHOOK_URL, json=payload, timeout=10)
-        print("✅ Webhook sent")
-    except Exception as e:
-        print(f"Webhook error: {e}")
-
-def promote_product(product_name, product_url, image_path=None):
-    post_to_twitter_with_image(product_name, product_url, image_path)
-    # Webhook is called separately in main to include price
+    payload = {"product": product_name, "url": product_url, "image": image_url, "price": price, "timestamp": datetime.now().isoformat()}
+    for attempt in range(3):
+        try:
+            requests.post(GENERIC_WEBHOOK_URL, json=payload, timeout=10)
+            print("✅ Webhook sent")
+            return
+        except Exception as e:
+            print(f"Webhook attempt {attempt+1} failed: {e}")
+            time.sleep(5)
+    print("⚠️ Webhook failed after 3 attempts")
 
 # ---------- AGGREGATOR PINGS ----------
 def ping_aggregators():
@@ -670,28 +684,7 @@ def self_replicate():
             time.sleep(30)
     print("⚠️ Self-replication failed after 3 attempts")
 
-# ---------- PRICING HELPERS ----------
-def load_price_history():
-    if os.path.exists(PRICE_HISTORY):
-        with open(PRICE_HISTORY, "r") as f:
-            return json.load(f)
-    return {"sales": [], "best_price": 5}
-
-def save_price_history(hist):
-    with open(PRICE_HISTORY, "w") as f:
-        json.dump(hist, f)
-
-def record_sale(price):
-    hist = load_price_history()
-    hist["sales"].append({"price": price, "time": datetime.now().isoformat()})
-    hist["sales"] = hist["sales"][-100:]
-    from collections import Counter
-    prices = [s["price"] for s in hist["sales"]]
-    if prices:
-        hist["best_price"] = Counter(prices).most_common(1)[0][0]
-    save_price_history(hist)
-
-# ---------- PRODUCT COUNT & GIT ----------
+# ---------- PRODUCT COUNT & GIT (with retries) ----------
 def get_product_count():
     if os.path.exists(PRODUCT_COUNTER_FILE):
         with open(PRODUCT_COUNTER_FILE, "r") as f:
@@ -708,12 +701,19 @@ def increment_product_count():
 def git_commit_push(msg):
     subprocess.run(["git", "config", "user.email", "bot@example.com"])
     subprocess.run(["git", "config", "user.name", "AutoBot"])
-    subprocess.run(["git", "commit", "-m", msg], stderr=subprocess.DEVNULL)
-    subprocess.run(["git", "push"], stderr=subprocess.DEVNULL)
+    for attempt in range(3):
+        try:
+            subprocess.run(["git", "commit", "-m", msg], check=True, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "push"], check=True, stderr=subprocess.DEVNULL)
+            return
+        except Exception as e:
+            print(f"Git push attempt {attempt+1} failed: {e}")
+            time.sleep(5)
+    print("⚠️ Git push failed after 3 attempts")
 
 # ---------- MAIN ----------
 def main():
-    print(f"🚀 FINAL AUDITED BOT started at {datetime.now()}")
+    print(f"🚀 FINAL BOT WITH RETRIES started at {datetime.now()}")
     download_font()
     update_website_header()
     fname, desc, score = generate_quality_product()
@@ -728,13 +728,13 @@ def main():
     count = increment_product_count()
     git_commit_push(f"Add product #{count}: {desc} (QC {score}/10)")
     # Promote on Twitter
-    promote_product(desc, product_url, fname if fname.endswith(".png") else None)
-    # Webhook (with price)
+    post_to_twitter_with_image(desc, product_url, fname if fname.endswith(".png") else None)
+    # Webhook
     image_url = SITE_URL + fname if fname.endswith(".png") else None
     post_to_webhook(desc, product_url, image_url, price)
-    # Ping aggregators again (though also done in sitemap)
+    # Ping aggregators
     ping_aggregators()
-    # Replicate if threshold reached
+    # Replicate
     if count >= REPLICATE_AFTER:
         print("🔄 Replication threshold reached")
         self_replicate()
