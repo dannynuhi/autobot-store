@@ -13,7 +13,7 @@ from reportlab.lib.pagesizes import letter
 # ---------- CONFIG ----------
 PAYPAL_EMAIL = os.environ.get("PAYPAL_EMAIL", "")
 GITHUB_TOKEN = os.environ.get("GH_TOKEN", "")
-REPLICATE_AFTER = 3
+REPLICATE_AFTER = 2
 PRODUCT_COUNTER_FILE = "product_count.json"
 INDEX_HTML = "index.html"
 SITEMAP_XML = "sitemap.xml"
