@@ -459,7 +459,7 @@ def safe_generate_poster():
     draw.rectangle([(10,10), (width-10, height-10)], outline=(200,200,200), width=2)
     fname = f"poster_safe_{uuid.uuid4().hex[:8]}.png"
     img.save(fname)
-    return fname, quote
+    return fname, quote, 10
 
 def safe_generate_planner():
     fname = f"planner_safe_{uuid.uuid4().hex[:8]}.pdf"
@@ -473,7 +473,7 @@ def safe_generate_planner():
         c.drawString(100, y, f"Day {i+1}: ____________________")
         y -= 40
     c.save()
-    return fname, "Safe Weekly Planner"
+    return fname, "Safe Weekly Planner", 10
 
 # ---------- DYNAMIC PRICING ----------
 def get_optimal_price(desc=None):
