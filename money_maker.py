@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """
-ULTIMATE AUTONOMOUS BOT – FINAL AUDITED VERSION
-- 12 product types (6 EN, 6 ES)
-- Quality control (score ≥8/10)
-- Twitter with image upload (keys already set)
-- SEO: JSON-LD, Open Graph, mobile-responsive
-- Self-replication with 3 retries
-- A/B price testing (3,5,7,9)
-- Aggregator pings (Google, Bing, Pingomatic, Baidu, Yandex)
-- Runs every 6 hours, replicates after 2 products
-- Zero API keys required beyond existing Twitter setup
+FINAL AUDITED AUTONOMOUS BOT – v8
+- 12 product types (EN/ES) with expanded quotes & sections
+- Generic webhook (optional – set GENERIC_WEBHOOK_URL)
+- Dynamic pricing per product type
+- Enhanced CSS (grid layout, better cards)
+- SEO: canonical, article:published_time
+- Twitter, pings, self‑replication with retries
 """
 
-import os, random, json, subprocess, time, requests, uuid, sys, math, textwrap
+import os, random, json, subprocess, time, requests, uuid, sys, math
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 from reportlab.pdfgen import canvas
@@ -31,6 +28,7 @@ QUALITY_THRESHOLD = 8
 MAX_RETRIES = 3
 FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/apache/roboto/Roboto-Regular.ttf"
 FONT_FILE = "Roboto-Regular.ttf"
+GENERIC_WEBHOOK_URL = os.environ.get("GENERIC_WEBHOOK_URL", "")
 
 # Twitter keys (already set)
 TWITTER_API_KEY = os.environ.get("TWITTER_API_KEY", "")
@@ -69,6 +67,33 @@ def get_font(size):
             pass
     return ImageFont.load_default()
 
+# ---------- ENHANCED CONTENT ----------
+EN_QUOTES = [
+    "Discipline = Freedom", "Small steps daily", "Your only limit is your mind",
+    "Make money while you sleep", "Start before you are ready", "Consistency beats intensity",
+    "Progress not perfection", "Dream big, start small",
+    "Action creates momentum", "Believe you can", "Focus on what matters",
+    "The best time is now", "You are enough", "Stay hungry, stay foolish"
+]
+ES_QUOTES = [
+    "Disciplina = Libertad", "Pasos pequeños cada día", "Tu único límite es tu mente",
+    "Gana dinero mientras duermes", "Empieza antes de estar listo", "La constancia vence a la intensidad",
+    "Progreso, no perfección", "Sueña en grande, empieza pequeño",
+    "La acción crea impulso", "Cree en ti", "Enfócate en lo que importa",
+    "El mejor momento es ahora", "Eres suficiente", "Mantén el hambre, mantén la locura"
+]
+
+EN_SECTIONS = [
+    ["Top 3 Goals", "To-Do List", "Appointments", "Notes"],
+    ["Priorities", "Schedule", "Meals", "Exercise"],
+    ["Daily Affirmations", "Gratitude", "Goals", "Reflections"]
+]
+ES_SECTIONS = [
+    ["Top 3 Metas", "Lista de Tareas", "Citas", "Notas"],
+    ["Prioridades", "Horario", "Comidas", "Ejercicio"],
+    ["Afirmaciones Diarias", "Gratitud", "Metas", "Reflexiones"]
+]
+
 # ---------- ENGLISH GENERATORS ----------
 def generate_poster_en():
     width, height = 800, 600
@@ -90,12 +115,7 @@ def generate_poster_en():
         bg = (240, 240, 240)
     img = Image.new("RGB", (width, height), color=bg)
     draw = ImageDraw.Draw(img)
-    quotes = [
-        "Discipline = Freedom", "Small steps daily", "Your only limit is your mind",
-        "Make money while you sleep", "Start before you are ready", "Consistency beats intensity",
-        "Progress not perfection", "Dream big, start small"
-    ]
-    quote = random.choice(quotes)
+    quote = random.choice(EN_QUOTES)
     font_size = 60
     while font_size > 20:
         font = get_font(font_size)
@@ -122,7 +142,7 @@ def generate_planner_en():
     c.setFont("Helvetica", 12)
     c.drawString(100, 720, f"Date: {datetime.now().strftime('%B %d, %Y')}")
     y = 680
-    sections = ["Top 3 Goals", "To-Do List", "Appointments", "Notes"]
+    sections = random.choice(EN_SECTIONS)
     for sec in sections:
         c.setFont("Helvetica-Bold", 14)
         c.drawString(100, y, sec)
@@ -217,12 +237,7 @@ def generate_poster_es():
         bg = (240, 240, 240)
     img = Image.new("RGB", (width, height), color=bg)
     draw = ImageDraw.Draw(img)
-    quotes = [
-        "Disciplina = Libertad", "Pasos pequeños cada día", "Tu único límite es tu mente",
-        "Gana dinero mientras duermes", "Empieza antes de estar listo", "La constancia vence a la intensidad",
-        "Progreso, no perfección", "Sueña en grande, empieza pequeño"
-    ]
-    quote = random.choice(quotes)
+    quote = random.choice(ES_QUOTES)
     font_size = 60
     while font_size > 20:
         font = get_font(font_size)
@@ -249,7 +264,7 @@ def generate_planner_es():
     c.setFont("Helvetica", 12)
     c.drawString(100, 720, f"Fecha: {datetime.now().strftime('%d de %B de %Y')}")
     y = 680
-    sections = ["Top 3 Metas", "Lista de Tareas", "Citas", "Notas"]
+    sections = random.choice(ES_SECTIONS)
     for sec in sections:
         c.setFont("Helvetica-Bold", 14)
         c.drawString(100, y, sec)
@@ -458,7 +473,23 @@ def safe_generate_planner():
     c.save()
     return fname, "Safe Weekly Planner"
 
-# ---------- WEBSITE WITH SEO ----------
+# ---------- DYNAMIC PRICING ----------
+def get_optimal_price(desc=None):
+    # Base price from A/B testing
+    hist = load_price_history()
+    if len(hist["sales"]) < 5:
+        # Default per type
+        if desc:
+            if "Planner" in desc or "Planificador" in desc:
+                return 7
+            elif "Poster" in desc or "Póster" in desc:
+                return 5
+            else:
+                return random.choice([3,5,7,9])
+        return random.choice([3,5,7,9])
+    return hist.get("best_price", 5)
+
+# ---------- WEBSITE WITH SEO (enhanced CSS) ----------
 def update_website_header():
     if not os.path.exists(INDEX_HTML):
         with open(INDEX_HTML, "w") as f:
@@ -476,20 +507,26 @@ def update_website_header():
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Danny's Digital Goods">
     <meta name="twitter:description" content="Daily new printables – planners, posters, checklists.">
+    <link rel="canonical" href="https://dannynuhi.github.io/autobot-store/">
     <title>Danny's Digital Goods – Daily Printables Store</title>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; background: #f9f9f9; line-height: 1.6; }
-        .product { background: white; padding: 20px; margin: 20px 0; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        h1 { color: #2c3e50; }
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .product { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; flex-direction: column; }
+        .product h3 { margin-top: 0; color: #2980b9; }
         .price { font-size: 1.4em; font-weight: bold; color: #27ae60; }
+        .product a { word-break: break-all; }
         .share-buttons a { margin-right: 10px; }
         footer { margin-top: 40px; text-align: center; color: #7f8c8d; }
-        @media (max-width: 600px) { body { margin: 10px; } .product { padding: 15px; } }
+        @media (max-width: 600px) { body { margin: 10px; } .product { padding: 15px; } .product-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
     <h1>📈 Danny's Digital Goods</h1>
     <p>New product every day. <a href="/rss.xml">RSS</a> | <a href="/sitemap.xml">Sitemap</a></p>
     <hr>
+    <div class="product-grid">
 ''')
         subprocess.run(["git", "add", INDEX_HTML], stderr=subprocess.DEVNULL)
 
@@ -537,7 +574,7 @@ def finalize_website():
     with open(INDEX_HTML, "r+") as f:
         content = f.read()
         if "</body>" not in content:
-            f.write("\n<footer>Auto-generated daily – new products every 6 hours</footer></body></html>")
+            f.write('</div>\n<footer>Auto-generated daily – new products every 6 hours</footer></body></html>')
             subprocess.run(["git", "add", INDEX_HTML], stderr=subprocess.DEVNULL)
 
 def generate_sitemap(products):
@@ -547,7 +584,6 @@ def generate_sitemap(products):
             f.write(f'<url><loc>{url}</loc><lastmod>{lastmod}</lastmod><priority>0.8</priority></url>\n')
         f.write('</urlset>')
     subprocess.run(["git", "add", SITEMAP_XML], stderr=subprocess.DEVNULL)
-    # Ping search engines
     ping_aggregators()
 
 def generate_rss(products):
@@ -559,7 +595,7 @@ def generate_rss(products):
         f.write('</channel></rss>')
     subprocess.run(["git", "add", RSS_XML], stderr=subprocess.DEVNULL)
 
-# ---------- SOCIAL MEDIA (Twitter only, others skip) ----------
+# ---------- SOCIAL MEDIA ----------
 def post_to_twitter_with_image(description, url, image_path):
     if not (TWITTER_API_KEY and TWITTER_ACCESS_TOKEN):
         print("Twitter keys not set – skipping")
@@ -581,8 +617,26 @@ def post_to_twitter_with_image(description, url, image_path):
     except Exception as e:
         print(f"Twitter error: {e}")
 
+# ---------- GENERIC WEBHOOK (no API keys) ----------
+def post_to_webhook(product_name, product_url, image_url, price):
+    if not GENERIC_WEBHOOK_URL:
+        return
+    try:
+        payload = {
+            "product": product_name,
+            "url": product_url,
+            "image": image_url,
+            "price": price,
+            "timestamp": datetime.now().isoformat()
+        }
+        requests.post(GENERIC_WEBHOOK_URL, json=payload, timeout=10)
+        print("✅ Webhook sent")
+    except Exception as e:
+        print(f"Webhook error: {e}")
+
 def promote_product(product_name, product_url, image_path=None):
     post_to_twitter_with_image(product_name, product_url, image_path)
+    # Webhook is called separately in main to include price
 
 # ---------- AGGREGATOR PINGS ----------
 def ping_aggregators():
@@ -616,7 +670,7 @@ def self_replicate():
             time.sleep(30)
     print("⚠️ Self-replication failed after 3 attempts")
 
-# ---------- PRICING (A/B testing) ----------
+# ---------- PRICING HELPERS ----------
 def load_price_history():
     if os.path.exists(PRICE_HISTORY):
         with open(PRICE_HISTORY, "r") as f:
@@ -626,12 +680,6 @@ def load_price_history():
 def save_price_history(hist):
     with open(PRICE_HISTORY, "w") as f:
         json.dump(hist, f)
-
-def get_optimal_price():
-    hist = load_price_history()
-    if len(hist["sales"]) < 5:
-        return random.choice([3,5,7,9])
-    return hist.get("best_price", 5)
 
 def record_sale(price):
     hist = load_price_history()
@@ -665,23 +713,26 @@ def git_commit_push(msg):
 
 # ---------- MAIN ----------
 def main():
-    print(f"🚀 ULTIMATE AUTONOMOUS BOT started at {datetime.now()}")
+    print(f"🚀 FINAL AUDITED BOT started at {datetime.now()}")
     download_font()
     update_website_header()
     fname, desc, score = generate_quality_product()
-    price = get_optimal_price()
+    price = get_optimal_price(desc)
     add_product_to_website(fname, desc, price)
     finalize_website()
     product_url = f"{SITE_URL}{fname}"
     product_urls = [(product_url, datetime.now().strftime("%Y-%m-%d"))]
     rss_items = [(desc, product_url, desc, datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000"))]
-    generate_sitemap(product_urls)  # this also pings
+    generate_sitemap(product_urls)
     generate_rss(rss_items)
     count = increment_product_count()
     git_commit_push(f"Add product #{count}: {desc} (QC {score}/10)")
-    # Promote on Twitter (if keys set)
+    # Promote on Twitter
     promote_product(desc, product_url, fname if fname.endswith(".png") else None)
-    # Ping aggregators again (just in case)
+    # Webhook (with price)
+    image_url = SITE_URL + fname if fname.endswith(".png") else None
+    post_to_webhook(desc, product_url, image_url, price)
+    # Ping aggregators again (though also done in sitemap)
     ping_aggregators()
     # Replicate if threshold reached
     if count >= REPLICATE_AFTER:
